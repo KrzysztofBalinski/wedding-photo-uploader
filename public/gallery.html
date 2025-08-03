@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8">
+    <title>Galeria zdjęć</title>
+    <style>
+        img {
+            max-width: 200px;
+            margin: 10px;
+            border: 1px solid #ccc;
+        }
+    </style>
+</head>
+<body>
+<h1>Galeria zdjęć z wesela</h1>
+<div id="gallery"></div>
+
+<script>
+    async function loadGallery() {
+        const res = await fetch('/gallery-data');
+        const images = await res.json();
+        const gallery = document.getElementById('gallery');
+        gallery.innerHTML = '';
+        images.forEach(url => {
+            const img = document.createElement('img');
+            img.src = url;
+            gallery.appendChild(img);
+        });
+    }
+
+    loadGallery();
+</script>
+</body>
+</html>

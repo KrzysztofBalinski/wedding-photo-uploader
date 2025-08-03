@@ -21,15 +21,30 @@ const storage = multer.diskStorage({
 
 const upload = multer({ storage });
 
-// Serwujemy statyczny frontend (np. upload.html)
+// Serwujemy statyczny frontend (np. upload.html, gallery.html)
 app.use(express.static(path.join(__dirname, 'public')));
+
+// Serwujemy przesłane pliki (dla galerii)
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // Endpoint do uploadu zdjęć
 app.post('/upload', upload.array('photos', 20), (req, res) => {
   res.send('Zdjęcia zostały przesłane!');
 });
 
-// Przekierowanie z "/" na "/upload.html"
+// Endpoint zwracający listę zdjęć do galerii
+app.get('/gallery-data', (req, res) => {
+  const uploadDir = path.join(__dirname, 'uploads');
+  fs.readdir(uploadDir, (err, files) => {
+    if (err) {
+      return res.status(500).json({ error: 'Nie udało się wczytać plików' });
+    }
+    const imageUrls = files.map(file => `/uploads/${file}`);
+    res.json(imageUrls);
+  });
+});
+
+// Przekierowanie "/" → "/upload.html"
 app.get('/', (req, res) => {
   res.redirect('/upload.html');
 });
