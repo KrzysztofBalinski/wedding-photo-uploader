@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+  <meta charset="UTF-8">
+  <title>Upload zdjęć</title>
+</head>
+<body>
+  <h1>Prześlij zdjęcia z wesela</h1>
+  <form id="uploadForm" enctype="multipart/form-data">
+    <input type="file" name="photos" multiple required>
+    <button type="submit">Wyślij</button>
+  </form>
+
+  <script>
+    const form = document.getElementById('uploadForm');
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const formData = new FormData(form);
+      const response = await fetch('/upload', {
+        method: 'POST',
+        body: formData
+      });
+
+      if (response.ok) {
+        alert('Zdjęcia przesłane!');
+        form.reset();
+      } else {
+        alert('Błąd przesyłania zdjęć.');
+      }
+    });
+  </script>
+</body>
+</html>
