@@ -21,12 +21,17 @@ const storage = multer.diskStorage({
 
 const upload = multer({ storage });
 
-// Serwujemy statyczny frontend
+// Serwujemy statyczny frontend (np. upload.html)
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Endpoint do uploadu
+// Endpoint do uploadu zdjęć
 app.post('/upload', upload.array('photos', 20), (req, res) => {
   res.send('Zdjęcia zostały przesłane!');
+});
+
+// Przekierowanie z "/" na "/upload.html"
+app.get('/', (req, res) => {
+  res.redirect('/upload.html');
 });
 
 // Start serwera
