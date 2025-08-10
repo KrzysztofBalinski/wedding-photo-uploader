@@ -6,7 +6,7 @@ const fs = require('fs');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Konfiguracja miejsca zapisu zdjęć
+// ==== STORAGE (multer) ====
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
     const uploadDir = path.join(__dirname, 'uploads');
@@ -14,42 +14,64 @@ const storage = multer.diskStorage({
     cb(null, uploadDir);
   },
   filename: function (req, file, cb) {
-    const timestamp = Date.now();
-    cb(null, `${timestamp}-${file.originalname}`);
+    const ts = Date.now();
+    // prosta ochrona przed dziwnymi znakami w nazwach
+    const safeOriginal = file.originalname.replace(/[^\w.\-]+/g, '_');
+    cb(null, `${ts}-${safeOriginal}`);
   }
 });
 
-const upload = multer({ storage });
+// limity i filtr mimetype (opcjonalnie możesz zmienić)
+const upload = multer({
+  storage,
+  limits: { fileSize: 100 * 1024 * 1024 }, // 100MB/plik
+  fileFilter: (req, file, cb) => {
+    if (!file.mimetype || !file.mimetype.startsWith('image/')) {
+      return cb(new Error('Dozwolone są tylko pliki graficzne'), false);
+    }
+    cb(null, true);
+  }
+});
 
-// Serwujemy statyczny frontend (np. upload.html, gallery.html)
-app.use(express.static(path.join(__dirname, 'public')));
+// ==== MIDDLEWARE statyczne ====
+app.use(express.static(path.join(__dirname, 'public')));        // /upload.html, /gallery.html itd.
+app.use('/uploads', express.static(path.join(__dirname, 'uploads'))); // serwuj wgrane pliki
 
-// Serwujemy przesłane pliki (dla galerii)
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+// twardy handler na wypadek problemów z serwowaniem statyków
+app.get('/upload.html', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'upload.html'));
+});
 
-// Endpoint do uploadu zdjęć
+// zdrowie usługi (do diagnostyki)
+app.get('/healthz', (req, res) => res.send('ok'));
+
+// ==== API ====
 app.post('/upload', upload.array('photos', 20), (req, res) => {
   res.send('Zdjęcia zostały przesłane!');
 });
 
-// Endpoint zwracający listę zdjęć do galerii
 app.get('/gallery-data', (req, res) => {
   const uploadDir = path.join(__dirname, 'uploads');
   fs.readdir(uploadDir, (err, files) => {
-    if (err) {
-      return res.status(500).json({ error: 'Nie udało się wczytać plików' });
-    }
-    const imageUrls = files.map(file => `/uploads/${file}`);
+    if (err) return res.status(500).json({ error: 'Nie udało się wczytać plików' });
+    // tylko pliki obrazów
+    const imageUrls = (files || [])
+        .filter(f => /\.(jpe?g|png|gif|webp|bmp|tiff?)$/i.test(f))
+        .map(f => `/uploads/${f}`);
     res.json(imageUrls);
   });
 });
 
-// Przekierowanie "/" → "/upload.html"
-app.get('/', (req, res) => {
-  res.redirect('/upload.html');
+// przekierowanie root -> upload
+app.get('/', (req, res) => res.redirect('/upload.html'));
+
+// prosty handler błędów (np. z Multera)
+app.use((err, req, res, next) => {
+  console.error('Błąd:', err.message);
+  res.status(400).send(err.message || 'Błąd żądania');
 });
 
-// Start serwera
+// ==== START (IPv4) ====
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`Serwer działa na porcie ${PORT} (IPv4)`);
 });
