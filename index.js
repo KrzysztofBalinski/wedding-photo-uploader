@@ -6,72 +6,50 @@ const fs = require('fs');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// ==== STORAGE (multer) ====
+// Folder na uploady
+const uploadFolder = path.join(__dirname, 'uploads');
+if (!fs.existsSync(uploadFolder)) {
+  fs.mkdirSync(uploadFolder);
+}
+
+// Konfiguracja Multer
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
-    const uploadDir = path.join(__dirname, 'uploads');
-    fs.mkdirSync(uploadDir, { recursive: true });
-    cb(null, uploadDir);
+    cb(null, uploadFolder);
   },
   filename: function (req, file, cb) {
-    const ts = Date.now();
-    // prosta ochrona przed dziwnymi znakami w nazwach
-    const safeOriginal = file.originalname.replace(/[^\w.\-]+/g, '_');
-    cb(null, `${ts}-${safeOriginal}`);
+    cb(null, Date.now() + '-' + file.originalname);
   }
 });
+const upload = multer({ storage: storage });
 
-// limity i filtr mimetype (opcjonalnie możesz zmienić)
-const upload = multer({
-  storage,
-  limits: { fileSize: 100 * 1024 * 1024 }, // 100MB/plik
-  fileFilter: (req, file, cb) => {
-    if (!file.mimetype || !file.mimetype.startsWith('image/')) {
-      return cb(new Error('Dozwolone są tylko pliki graficzne'), false);
+// Statyczne pliki (upload.html, lista zdjęć itd.)
+app.use(express.static(path.join(__dirname, 'public')));
+app.use('/uploads', express.static(uploadFolder));
+
+// Obsługa GET i HEAD dla strony głównej
+app.all('/', (req, res) => res.redirect('/upload.html'));
+
+// Endpoint do uploadu zdjęcia
+app.post('/upload', upload.single('photo'), (req, res) => {
+  if (!req.file) {
+    return res.status(400).send('Nie przesłano pliku.');
+  }
+  res.send('Plik przesłany pomyślnie.');
+});
+
+// Lista plików
+app.get('/files', (req, res) => {
+  fs.readdir(uploadFolder, (err, files) => {
+    if (err) {
+      return res.status(500).send('Błąd odczytu folderu.');
     }
-    cb(null, true);
-  }
-});
-
-// ==== MIDDLEWARE statyczne ====
-app.use(express.static(path.join(__dirname, 'public')));        // /upload.html, /gallery.html itd.
-app.use('/uploads', express.static(path.join(__dirname, 'uploads'))); // serwuj wgrane pliki
-
-// twardy handler na wypadek problemów z serwowaniem statyków
-app.get('/upload.html', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'upload.html'));
-});
-
-// zdrowie usługi (do diagnostyki)
-app.get('/healthz', (req, res) => res.send('ok'));
-
-// ==== API ====
-app.post('/upload', upload.array('photos', 20), (req, res) => {
-  res.send('Zdjęcia zostały przesłane!');
-});
-
-app.get('/gallery-data', (req, res) => {
-  const uploadDir = path.join(__dirname, 'uploads');
-  fs.readdir(uploadDir, (err, files) => {
-    if (err) return res.status(500).json({ error: 'Nie udało się wczytać plików' });
-    // tylko pliki obrazów
-    const imageUrls = (files || [])
-        .filter(f => /\.(jpe?g|png|gif|webp|bmp|tiff?)$/i.test(f))
-        .map(f => `/uploads/${f}`);
-    res.json(imageUrls);
+    let fileLinks = files.map(file => `<li><a href="/uploads/${file}">${file}</a></li>`).join('');
+    res.send(`<h1>Lista zdjęć</h1><ul>${fileLinks}</ul>`);
   });
 });
 
-// przekierowanie root -> upload
-app.get('/', (req, res) => res.redirect('/upload.html'));
-
-// prosty handler błędów (np. z Multera)
-app.use((err, req, res, next) => {
-  console.error('Błąd:', err.message);
-  res.status(400).send(err.message || 'Błąd żądania');
-});
-
-// ==== START (IPv4) ====
+// Start serwera
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`Serwer działa na porcie ${PORT} (IPv4)`);
+  console.log(`Serwer działa na porcie ${PORT}`);
 });
