@@ -50,6 +50,6 @@ app.get('/', (req, res) => {
 });
 
 // Start serwera
-app.listen(PORT, () => {
-  console.log(`Serwer działa na porcie ${PORT}`);
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`Serwer działa na porcie ${PORT} (IPv4)`);
 });
