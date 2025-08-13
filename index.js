@@ -1,12 +1,12 @@
 const express = require('express');
 const multer = require('multer');
-const fs = require('fs');
 const path = require('path');
+const fs = require('fs');
 
 const app = express();
-const PORT = 3000;
+const PORT = process.env.PORT || 3000;
 
-// Folder na pliki
+// Katalog na przesłane pliki
 const uploadDir = path.join(__dirname, 'uploads');
 if (!fs.existsSync(uploadDir)) {
   fs.mkdirSync(uploadDir);
@@ -14,43 +14,50 @@ if (!fs.existsSync(uploadDir)) {
 
 // Konfiguracja Multer z limitem 150 MB
 const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
+  destination: function (req, file, cb) {
     cb(null, uploadDir);
   },
-  filename: (req, file, cb) => {
+  filename: function (req, file, cb) {
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    cb(null, uniqueSuffix + '-' + file.originalname);
+    cb(null, uniqueSuffix + path.extname(file.originalname));
   }
 });
 
 const upload = multer({
   storage: storage,
-  limits: { fileSize: 150 * 1024 * 1024 } // 150 MB
-}).any(); // <-- akceptuj dowolną nazwę pola
+  limits: { fileSize: 150 * 1024 * 1024 }, // 150 MB
+}).array('photos', 50); // obsługa wielu plików w jednym uploadzie
 
-// Obsługa plików statycznych (formularz + przesłane pliki)
-app.use(express.static(path.join(__dirname)));
+// Serwowanie plików statycznych (HTML, CSS, JS, itp.)
+app.use(express.static(path.join(__dirname, 'public')));
 
-// Endpoint do uploadu
+// 🔹 Przekierowanie z "/" na "/upload.html"
+app.get('/', (req, res) => {
+  res.redirect('/upload.html');
+});
+
+// Endpoint do przesyłania zdjęć/wideo
 app.post('/upload', (req, res) => {
   upload(req, res, function (err) {
     if (err instanceof multer.MulterError) {
-      return res.status(400).send('Błąd Multer: ' + err.message);
+      console.error('Błąd Multer:', err);
+      return res.status(500).send('Błąd przesyłania zdjęć: ' + err.message);
     } else if (err) {
+      console.error('Błąd serwera:', err);
       return res.status(500).send('Błąd serwera: ' + err.message);
     }
     res.send('Pliki przesłane pomyślnie!');
   });
 });
 
-// Strona z listą plików
+// Podgląd listy plików
 app.get('/files', (req, res) => {
   fs.readdir(uploadDir, (err, files) => {
     if (err) {
-      return res.status(500).send('Błąd odczytu plików.');
+      return res.status(500).send('Błąd odczytu plików');
     }
-    let fileLinks = files.map(file => `<li><a href="/uploads/${file}">${file}</a></li>`).join('');
-    res.send(`<h1>Lista plików</h1><ul>${fileLinks}</ul>`);
+    let fileLinks = files.map(f => `<li><a href="/uploads/${f}" target="_blank">${f}</a></li>`).join('');
+    res.send(`<h1>Przesłane pliki</h1><ul>${fileLinks}</ul>`);
   });
 });
 
