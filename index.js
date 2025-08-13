@@ -1,61 +1,55 @@
 const express = require('express');
-const multer  = require('multer');
-const fs      = require('fs');
-const path    = require('path');
+const multer = require('multer');
+const path = require('path');
+const fs = require('fs');
 
-const app  = express();
+const app = express();
 const PORT = process.env.PORT || 3000;
 
-// === katalog na uploady ===
-const uploadDir = path.join(__dirname, 'uploads');
-fs.mkdirSync(uploadDir, { recursive: true });
+// Folder na uploady
+const uploadFolder = path.join(__dirname, 'uploads');
+if (!fs.existsSync(uploadFolder)) {
+  fs.mkdirSync(uploadFolder);
+}
 
-// === Multer: 150 MB, bez wrażliwości na nazwę pola (any) ===
+// Konfiguracja Multer
 const storage = multer.diskStorage({
-  destination: (_, __, cb) => cb(null, uploadDir),
-  filename:    (_, file, cb) => {
-    const safe = (file.originalname || 'file').replace(/[^\w.\-]+/g, '_');
-    cb(null, `${Date.now()}-${safe}`);
+  destination: function (req, file, cb) {
+    cb(null, uploadFolder);
+  },
+  filename: function (req, file, cb) {
+    cb(null, Date.now() + '-' + file.originalname);
   }
 });
-const upload = multer({
-  storage,
-  limits: { fileSize: 150 * 1024 * 1024 } // 150 MB/plik
-}).any();
+const upload = multer({ storage: storage });
 
-// === zdrowie (na wszelki wypadek) ===
-app.get('/healthz', (_, res) => res.send('ok'));
+// Statyczne pliki (upload.html, lista zdjęć itd.)
+app.use(express.static(path.join(__dirname, 'public')));
+app.use('/uploads', express.static(uploadFolder));
 
-// === PRZEKIEROWANIE / -> /upload.html (GET/HEAD) ===
+// Obsługa GET i HEAD dla strony głównej
 app.all('/', (req, res) => res.redirect('/upload.html'));
 
-// === statyki ===
-app.use(express.static(path.join(__dirname, 'public')));
-app.use('/uploads', express.static(uploadDir));
+// Endpoint do uploadu zdjęcia
+app.post('/upload', upload.single('photo'), (req, res) => {
+  if (!req.file) {
+    return res.status(400).send('Nie przesłano pliku.');
+  }
+  res.send('Plik przesłany pomyślnie.');
+});
 
-// === upload endpoint ===
-app.post('/upload', (req, res) => {
-  upload(req, res, (err) => {
+// Lista plików
+app.get('/files', (req, res) => {
+  fs.readdir(uploadFolder, (err, files) => {
     if (err) {
-      console.error('Upload error:', err);
-      return res.status(400).send('Błąd przesyłania: ' + (err.message || 'nieznany błąd'));
+      return res.status(500).send('Błąd odczytu folderu.');
     }
-    res.send('Pliki przesłane pomyślnie!');
+    let fileLinks = files.map(file => `<li><a href="/uploads/${file}">${file}</a></li>`).join('');
+    res.send(`<h1>Lista zdjęć</h1><ul>${fileLinks}</ul>`);
   });
 });
 
-// === lista plików ===
-app.get('/files', (_, res) => {
-  fs.readdir(uploadDir, (err, files) => {
-    if (err) return res.status(500).send('Błąd odczytu plików.');
-    const list = (files || [])
-        .map(f => `<li><a href="/uploads/${encodeURIComponent(f)}" target="_blank">${f}</a></li>`)
-        .join('');
-    res.send(`<h1>Wgrane pliki</h1><ul>${list}</ul>`);
-  });
-});
-
-// === start ===
+// Start serwera
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`Serwer działa na porcie ${PORT}`);
 });
