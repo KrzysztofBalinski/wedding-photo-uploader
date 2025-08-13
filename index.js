@@ -6,56 +6,58 @@ const path = require('path');
 const app = express();
 const PORT = 3000;
 
-// Upewnij się, że katalog uploads istnieje
+// Folder na pliki
 const uploadDir = path.join(__dirname, 'uploads');
 if (!fs.existsSync(uploadDir)) {
-  fs.mkdirSync(uploadDir, { recursive: true });
-  console.log('📂 Utworzono folder uploads');
+  fs.mkdirSync(uploadDir);
 }
 
-// Konfiguracja Multer z limitem 100 MB
+// Konfiguracja Multer z limitem 150 MB
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
     cb(null, uploadDir);
   },
   filename: (req, file, cb) => {
-    cb(null, Date.now() + '-' + file.originalname);
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    cb(null, uniqueSuffix + '-' + file.originalname);
   }
 });
 
 const upload = multer({
   storage: storage,
-  limits: { fileSize: 100 * 1024 * 1024 } // 100 MB
-});
+  limits: { fileSize: 150 * 1024 * 1024 } // 150 MB
+}).any(); // <-- akceptuj dowolną nazwę pola
 
-// Serwowanie plików statycznych
-app.use(express.static(path.join(__dirname, 'public')));
-app.use('/uploads', express.static(uploadDir));
+// Obsługa plików statycznych (formularz + przesłane pliki)
+app.use(express.static(path.join(__dirname)));
 
-// Obsługa uploadu
-app.post('/upload', upload.array('photos'), (req, res) => {
-  try {
-    console.log(`📸 Otrzymano ${req.files.length} plików`);
-    res.send('Pliki zostały przesłane pomyślnie!');
-  } catch (err) {
-    console.error('❌ Błąd uploadu:', err);
-    res.status(500).send('Błąd przesyłania zdjęć.');
-  }
-});
-
-// Lista przesłanych plików
-app.get('/gallery', (req, res) => {
-  fs.readdir(uploadDir, (err, files) => {
-    if (err) {
-      console.error('❌ Błąd odczytu folderu uploads:', err);
-      return res.status(500).send('Błąd odczytu plików.');
+// Endpoint do uploadu
+app.post('/upload', (req, res) => {
+  upload(req, res, function (err) {
+    if (err instanceof multer.MulterError) {
+      return res.status(400).send('Błąd Multer: ' + err.message);
+    } else if (err) {
+      return res.status(500).send('Błąd serwera: ' + err.message);
     }
-    const fileLinks = files.map(file => `<li><a href="/uploads/${file}">${file}</a></li>`).join('');
-    res.send(`<h1>Galeria zdjęć</h1><ul>${fileLinks}</ul>`);
+    res.send('Pliki przesłane pomyślnie!');
   });
 });
 
+// Strona z listą plików
+app.get('/files', (req, res) => {
+  fs.readdir(uploadDir, (err, files) => {
+    if (err) {
+      return res.status(500).send('Błąd odczytu plików.');
+    }
+    let fileLinks = files.map(file => `<li><a href="/uploads/${file}">${file}</a></li>`).join('');
+    res.send(`<h1>Lista plików</h1><ul>${fileLinks}</ul>`);
+  });
+});
+
+// Umożliwienie pobierania przesłanych plików
+app.use('/uploads', express.static(uploadDir));
+
 // Start serwera
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`🚀 Serwer działa na porcie ${PORT}`);
+  console.log(`Serwer działa na porcie ${PORT}`);
 });
