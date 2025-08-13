@@ -26,11 +26,12 @@ const upload = multer({
   limits: { fileSize: 150 * 1024 * 1024 } // 150 MB
 });
 
-// Udostępnianie folderu publicznego
-app.use(express.static(path.join(__dirname, 'public')));
-
 // Przekierowanie z "/" na "/upload.html"
 app.all('/', (req, res) => res.redirect('/upload.html'));
+
+
+// Udostępnianie folderu publicznego
+app.use(express.static(path.join(__dirname, 'public')));
 
 // Endpoint do przesyłania plików
 app.post('/upload', upload.array('photos', 50), (req, res) => {
