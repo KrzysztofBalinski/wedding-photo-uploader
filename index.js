@@ -1,70 +1,75 @@
 const express = require('express');
-const multer = require('multer');
-const path = require('path');
-const fs = require('fs');
+const multer  = require('multer');
+const path    = require('path');
+const fs      = require('fs');
 
-const app = express();
+const app  = express();
 const PORT = process.env.PORT || 3000;
 
-// Katalog na przesłane pliki
-const uploadDir = path.join(__dirname, 'uploads');
-if (!fs.existsSync(uploadDir)) {
-  fs.mkdirSync(uploadDir);
-}
+// === Ścieżki ===
+const rootDir    = __dirname;
+const publicDir  = path.join(rootDir, 'public');
+const uploadsDir = path.join(rootDir, 'uploads');
 
-// Konfiguracja Multer z limitem 150 MB
+// upewnij się, że /uploads istnieje
+fs.mkdirSync(uploadsDir, { recursive: true });
+
+// wykryj gdzie jest upload.html (public/ lub root)
+const uploadHtmlPath = fs.existsSync(path.join(publicDir, 'upload.html'))
+    ? path.join(publicDir, 'upload.html')
+    : path.join(rootDir, 'upload.html');
+
+// === Multer (150 MB, dowolne pole pliku) ===
 const storage = multer.diskStorage({
-  destination: function (req, file, cb) {
-    cb(null, uploadDir);
-  },
-  filename: function (req, file, cb) {
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    cb(null, uniqueSuffix + path.extname(file.originalname));
+  destination: (_, __, cb) => cb(null, uploadsDir),
+  filename:    (_, file, cb) => {
+    const safe = file.originalname.replace(/[^\w.\-]+/g, '_');
+    cb(null, `${Date.now()}-${safe}`);
   }
 });
-
 const upload = multer({
-  storage: storage,
-  limits: { fileSize: 150 * 1024 * 1024 }, // 150 MB
-}).array('photos', 50); // obsługa wielu plików w jednym uploadzie
+  storage,
+  limits: { fileSize: 150 * 1024 * 1024 } // 150 MB/plik
+}).any(); // akceptuj dowolną nazwę pola
 
-// Serwowanie plików statycznych (HTML, CSS, JS, itp.)
-app.use(express.static(path.join(__dirname, 'public')));
+// === Statyki ===
+// najpierw /public (jeśli jest), potem root (na wypadek upload.html w root)
+if (fs.existsSync(publicDir)) app.use(express.static(publicDir));
+app.use(express.static(rootDir));
+// serwuj wgrane pliki
+app.use('/uploads', express.static(uploadsDir));
 
-// 🔹 Przekierowanie z "/" na "/upload.html"
-app.get('/', (req, res) => {
-  res.redirect('/upload.html');
-});
+// === Routing ===
+// GET/HEAD "/" -> /upload.html
+app.all('/', (req, res) => res.redirect('/upload.html'));
 
-// Endpoint do przesyłania zdjęć/wideo
+// zawsze serwuj konkretnego upload.html z wykrytej ścieżki
+app.get('/upload.html', (req, res) => res.sendFile(uploadHtmlPath));
+
+// upload wielu plików (zdjęcia/wideo)
 app.post('/upload', (req, res) => {
-  upload(req, res, function (err) {
+  upload(req, res, (err) => {
     if (err instanceof multer.MulterError) {
-      console.error('Błąd Multer:', err);
-      return res.status(500).send('Błąd przesyłania zdjęć: ' + err.message);
+      console.error('Multer error:', err);
+      return res.status(400).send('Błąd przesyłania: ' + err.message);
     } else if (err) {
-      console.error('Błąd serwera:', err);
+      console.error('Server error:', err);
       return res.status(500).send('Błąd serwera: ' + err.message);
     }
-    res.send('Pliki przesłane pomyślnie!');
+    return res.send('Pliki przesłane pomyślnie!');
   });
 });
 
-// Podgląd listy plików
-app.get('/files', (req, res) => {
-  fs.readdir(uploadDir, (err, files) => {
-    if (err) {
-      return res.status(500).send('Błąd odczytu plików');
-    }
-    let fileLinks = files.map(f => `<li><a href="/uploads/${f}" target="_blank">${f}</a></li>`).join('');
-    res.send(`<h1>Przesłane pliki</h1><ul>${fileLinks}</ul>`);
+// prosta lista plików
+app.get('/files', (_, res) => {
+  fs.readdir(uploadsDir, (err, files) => {
+    if (err) return res.status(500).send('Błąd odczytu plików.');
+    const list = (files||[]).map(f => `<li><a href="/uploads/${encodeURIComponent(f)}" target="_blank">${f}</a></li>`).join('');
+    res.send(`<h1>Przesłane pliki</h1><ul>${list}</ul>`);
   });
 });
 
-// Umożliwienie pobierania przesłanych plików
-app.use('/uploads', express.static(uploadDir));
-
-// Start serwera
+// start
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`Serwer działa na porcie ${PORT}`);
 });
