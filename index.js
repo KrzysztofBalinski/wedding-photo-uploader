@@ -1,75 +1,55 @@
 const express = require('express');
-const multer  = require('multer');
-const path    = require('path');
-const fs      = require('fs');
+const multer = require('multer');
+const fs = require('fs');
+const path = require('path');
 
-const app  = express();
+const app = express();
 const PORT = process.env.PORT || 3000;
 
-// === Ścieżki ===
-const rootDir    = __dirname;
-const publicDir  = path.join(rootDir, 'public');
-const uploadsDir = path.join(rootDir, 'uploads');
+// Folder na przesłane pliki
+const uploadDir = path.join(__dirname, 'uploads');
+if (!fs.existsSync(uploadDir)) {
+  fs.mkdirSync(uploadDir);
+}
 
-// upewnij się, że /uploads istnieje
-fs.mkdirSync(uploadsDir, { recursive: true });
-
-// wykryj gdzie jest upload.html (public/ lub root)
-const uploadHtmlPath = fs.existsSync(path.join(publicDir, 'upload.html'))
-    ? path.join(publicDir, 'upload.html')
-    : path.join(rootDir, 'upload.html');
-
-// === Multer (150 MB, dowolne pole pliku) ===
+// Konfiguracja Multer z limitem 150 MB
 const storage = multer.diskStorage({
-  destination: (_, __, cb) => cb(null, uploadsDir),
-  filename:    (_, file, cb) => {
-    const safe = file.originalname.replace(/[^\w.\-]+/g, '_');
-    cb(null, `${Date.now()}-${safe}`);
+  destination: (req, file, cb) => {
+    cb(null, uploadDir);
+  },
+  filename: (req, file, cb) => {
+    cb(null, Date.now() + '-' + file.originalname);
   }
 });
 const upload = multer({
-  storage,
-  limits: { fileSize: 150 * 1024 * 1024 } // 150 MB/plik
-}).any(); // akceptuj dowolną nazwę pola
+  storage: storage,
+  limits: { fileSize: 150 * 1024 * 1024 } // 150 MB
+});
 
-// === Statyki ===
-// najpierw /public (jeśli jest), potem root (na wypadek upload.html w root)
-if (fs.existsSync(publicDir)) app.use(express.static(publicDir));
-app.use(express.static(rootDir));
-// serwuj wgrane pliki
-app.use('/uploads', express.static(uploadsDir));
+// Udostępnianie folderu publicznego
+app.use(express.static(path.join(__dirname, 'public')));
 
-// === Routing ===
-// GET/HEAD "/" -> /upload.html
+// Przekierowanie z "/" na "/upload.html"
 app.all('/', (req, res) => res.redirect('/upload.html'));
 
-// zawsze serwuj konkretnego upload.html z wykrytej ścieżki
-app.get('/upload.html', (req, res) => res.sendFile(uploadHtmlPath));
+// Endpoint do przesyłania plików
+app.post('/upload', upload.array('photos', 50), (req, res) => {
+  res.send('Pliki zostały przesłane pomyślnie!');
+});
 
-// upload wielu plików (zdjęcia/wideo)
-app.post('/upload', (req, res) => {
-  upload(req, res, (err) => {
-    if (err instanceof multer.MulterError) {
-      console.error('Multer error:', err);
-      return res.status(400).send('Błąd przesyłania: ' + err.message);
-    } else if (err) {
-      console.error('Server error:', err);
-      return res.status(500).send('Błąd serwera: ' + err.message);
-    }
-    return res.send('Pliki przesłane pomyślnie!');
+// Podgląd wgranych plików
+app.get('/files', (req, res) => {
+  fs.readdir(uploadDir, (err, files) => {
+    if (err) return res.status(500).send('Błąd odczytu plików');
+    let list = files.map(f => `<li><a href="/uploads/${f}">${f}</a></li>`).join('');
+    res.send(`<h1>Wgrane pliki</h1><ul>${list}</ul>`);
   });
 });
 
-// prosta lista plików
-app.get('/files', (_, res) => {
-  fs.readdir(uploadsDir, (err, files) => {
-    if (err) return res.status(500).send('Błąd odczytu plików.');
-    const list = (files||[]).map(f => `<li><a href="/uploads/${encodeURIComponent(f)}" target="_blank">${f}</a></li>`).join('');
-    res.send(`<h1>Przesłane pliki</h1><ul>${list}</ul>`);
-  });
-});
+// Udostępnianie folderu z uploadami
+app.use('/uploads', express.static(uploadDir));
 
-// start
+// Start serwera
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`Serwer działa na porcie ${PORT}`);
 });
