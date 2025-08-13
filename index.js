@@ -1,56 +1,61 @@
 const express = require('express');
-const multer = require('multer');
-const fs = require('fs');
-const path = require('path');
+const multer  = require('multer');
+const fs      = require('fs');
+const path    = require('path');
 
-const app = express();
+const app  = express();
 const PORT = process.env.PORT || 3000;
 
-// Folder na przesłane pliki
+// === katalog na uploady ===
 const uploadDir = path.join(__dirname, 'uploads');
-if (!fs.existsSync(uploadDir)) {
-  fs.mkdirSync(uploadDir);
-}
+fs.mkdirSync(uploadDir, { recursive: true });
 
-// Konfiguracja Multer z limitem 150 MB
+// === Multer: 150 MB, bez wrażliwości na nazwę pola (any) ===
 const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, uploadDir);
-  },
-  filename: (req, file, cb) => {
-    cb(null, Date.now() + '-' + file.originalname);
+  destination: (_, __, cb) => cb(null, uploadDir),
+  filename:    (_, file, cb) => {
+    const safe = (file.originalname || 'file').replace(/[^\w.\-]+/g, '_');
+    cb(null, `${Date.now()}-${safe}`);
   }
 });
 const upload = multer({
-  storage: storage,
-  limits: { fileSize: 150 * 1024 * 1024 } // 150 MB
-});
+  storage,
+  limits: { fileSize: 150 * 1024 * 1024 } // 150 MB/plik
+}).any();
 
-// Przekierowanie z "/" na "/upload.html"
+// === zdrowie (na wszelki wypadek) ===
+app.get('/healthz', (_, res) => res.send('ok'));
+
+// === PRZEKIEROWANIE / -> /upload.html (GET/HEAD) ===
 app.all('/', (req, res) => res.redirect('/upload.html'));
 
-
-// Udostępnianie folderu publicznego
+// === statyki ===
 app.use(express.static(path.join(__dirname, 'public')));
+app.use('/uploads', express.static(uploadDir));
 
-// Endpoint do przesyłania plików
-app.post('/upload', upload.array('photos', 50), (req, res) => {
-  res.send('Pliki zostały przesłane pomyślnie!');
+// === upload endpoint ===
+app.post('/upload', (req, res) => {
+  upload(req, res, (err) => {
+    if (err) {
+      console.error('Upload error:', err);
+      return res.status(400).send('Błąd przesyłania: ' + (err.message || 'nieznany błąd'));
+    }
+    res.send('Pliki przesłane pomyślnie!');
+  });
 });
 
-// Podgląd wgranych plików
-app.get('/files', (req, res) => {
+// === lista plików ===
+app.get('/files', (_, res) => {
   fs.readdir(uploadDir, (err, files) => {
-    if (err) return res.status(500).send('Błąd odczytu plików');
-    let list = files.map(f => `<li><a href="/uploads/${f}">${f}</a></li>`).join('');
+    if (err) return res.status(500).send('Błąd odczytu plików.');
+    const list = (files || [])
+        .map(f => `<li><a href="/uploads/${encodeURIComponent(f)}" target="_blank">${f}</a></li>`)
+        .join('');
     res.send(`<h1>Wgrane pliki</h1><ul>${list}</ul>`);
   });
 });
 
-// Udostępnianie folderu z uploadami
-app.use('/uploads', express.static(uploadDir));
-
-// Start serwera
+// === start ===
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`Serwer działa na porcie ${PORT}`);
 });
